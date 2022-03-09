@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-const int part_size = 100;
+const int part_size = 4;
 
 typedef struct MPI_Helper {
     int mpi_size;
@@ -27,6 +27,22 @@ int mpi_helper_init_data_in(MPI_Helper_t *h){
             int chunk_end = (chunk_id+1) * h->data_part_size;
             for(int j = chunk_start ; j < chunk_end ; j++){
                 h->data_in[j] = chunk_id;
+            }
+        }
+    }
+    return 0;
+}
+int mpi_helper_print_data_in(MPI_Helper_t *h){
+    if(h->mpi_rank == 0){
+        for(int chunk_id = 0; chunk_id < h->mpi_size; chunk_id++){
+            int chunk_start = chunk_id * h->data_part_size;
+            int chunk_end = (chunk_id+1) * h->data_part_size;
+            for(int j = chunk_start; j < chunk_end; j++){
+                int expected = chunk_id;
+                if(h->data_in[j] != expected) {
+                    fprintf(stderr, "h->data_in[%d] = %d different from expected %d\n", j, h->data_in[j], expected);
+                }
+                fprintf(stderr, "h->data_in[%d] = %d\n", j, h->data_in[j]);
             }
         }
     }
@@ -100,15 +116,26 @@ int main(int argc, char **argv)
     // Root process initializes data
     mpi_helper_init_data_in(&h);
 
+    mpi_helper_print_data_in(&h);
+
     // Each process gets a different chunk of data_in sent by the root process
     // to its data_part_in.  Note that the root process also sends itself a
     // chunk of data.
-    MPI_Scatter(
-        h.data_in,      h.data_part_size, MPI_INT,
-        h.data_part_in, h.data_part_size, MPI_INT,
-        0, // root
-        MPI_COMM_WORLD
-    );
+    if(h.mpi_rank == 0){
+        MPI_Scatter(
+            h.data_in,      h.data_part_size, MPI_INT,
+            h.data_part_in, h.data_part_size, MPI_INT,
+            0, // root
+            MPI_COMM_WORLD
+        );
+    } else {
+        MPI_Scatter(
+            h.data_in,      h.data_part_size, MPI_INT,
+            h.data_part_in, h.data_part_size, MPI_INT,
+            0, // root
+            MPI_COMM_WORLD
+        );
+    }
     // NOTE: The total data size is implicit from the part size and the number
     // of involved processes
     // for(int dest_rank = 0; dest_rank < h.mpi_size; dest_rank++){
@@ -127,12 +154,21 @@ int main(int argc, char **argv)
 
     // Each process will send its data_part_out to data_out on the root process
     // Note that the root process sends its data_part_out to itself.
-    MPI_Gather(
-        h.data_part_out, h.data_part_size, MPI_INT,
-        h.data_out,      h.data_part_size, MPI_INT,
-        0, // root
-        MPI_COMM_WORLD
-    );
+    if(h.mpi_rank == 0){
+        MPI_Gather(
+            h.data_part_out, h.data_part_size, MPI_INT,
+            h.data_out,      h.data_part_size, MPI_INT,
+            0, // root
+            MPI_COMM_WORLD
+        );
+    } else {
+        MPI_Gather(
+            h.data_part_out, h.data_part_size, MPI_INT,
+            h.data_out,      h.data_part_size, MPI_INT,
+            0, // root
+            MPI_COMM_WORLD
+        );
+    }
 
     // The data should be reassembled in order it was sent.
     mpi_helper_print_data_out(&h);
