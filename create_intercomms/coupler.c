@@ -31,30 +31,14 @@ MPI_Comm init_coupler(struct coupler *c, int nb_models)
         all_sizes = malloc(world_size * sizeof(*all_sizes));
     }
     MPI_Gather(&c->local_size, 1, MPI_INT, all_sizes, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    /*
-     * ==> all_sizes = [1 n1 n1 n1 ... n1 n2 n2 n2 ... n2 n3 n3 n3 ... n3]
-     *                    |- n1 entries-| |- n2 entries-| |- n3 entries-|
-     *                                    ^               ^
-     *                             index  i              i+n2
-     *                            memory  p              p+*p
-     */
 
     if(c->role == R_COUPLER){
         /*
          * Print all sizes array
          */
-        fprintf(stderr, "All sizes   = [");
+        fprintf(stderr, "All sizes = [");
         for(int i = 0; i<world_size; i++){
-            fprintf(stderr, "%2.d ", all_sizes[i]);
-        }
-        fprintf(stderr, "\033[1D]\n");
-        /*
-         * Print ranks below sizes array to confirm values are correct
-         */
-        fprintf(stderr, "World ranks = [");
-        fprintf(stderr, " 0 "); // "%2.d" prints just a space if the int is 0
-        for(int i = 1; i<world_size; i++){
-            fprintf(stderr, "%2.d ", i);
+            fprintf(stderr, "%d ", all_sizes[i]);
         }
         fprintf(stderr, "\033[1D]\n");
 
@@ -123,42 +107,4 @@ MPI_Comm init_coupler(struct coupler *c, int nb_models)
     }
 
     return c->local_comm;
-}
-
-/*
- * Lazy way of sharing grid and tile information between the coupler and the
- * model.  This thing is just to learn to use MPI_Gatherv, MPI_Scatterv so I can
- * start using it in the real coupler.
- */
-void make_tiles(struct tile *tiles, int *jpiglo, int *jpjglo){
-    *jpiglo = 11;
-    *jpjglo = 13;
-    int jpni = 2;
-    int jpnj = 2;
-    tiles[0] = (struct tile){
-        .i0 = 0,
-        .j0 = 0,
-        .i1 = *jpiglo/2,
-        .j1 = *jpjglo/2
-    };
-    tiles[1] = (struct tile){
-        .i0 = *jpiglo/2,
-        .j0 = 0,
-        .i1 = *jpiglo,
-        .j1 = *jpjglo/2
-    };
-    tiles[2] = (struct tile){
-        .i0 = 0,
-        .j0 = *jpjglo/2,
-
-        .i1 = *jpiglo/2,
-        .j1 = *jpjglo
-    };
-    tiles[3] = (struct tile){
-        .i0 = *jpiglo/2,
-        .j0 = *jpjglo/2,
-
-        .i1 = *jpiglo,
-        .j1 = *jpjglo
-    };
 }
