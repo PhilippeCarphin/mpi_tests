@@ -17,27 +17,27 @@ MPI_Comm init_coupler(struct coupler *c, int nb_models)
     MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_APPNUM, &v, &flag);
     appnum = *v;
 
+    /*
+     * Create local_comm, communicator between processes with the same value
+     * of `appnum`.  These are the groups of processes launched in the mpirun
+     * command.
+     */
     MPI_Comm_split(MPI_COMM_WORLD, appnum, world_rank, &c->local_comm);
-
     MPI_Comm_rank(c->local_comm, &c->local_rank);
     MPI_Comm_size(c->local_comm, &c->local_size);
-    usleep(10000 * world_rank);
+    usleep(10000 * world_rank); // sleep a an amount of time proportional to world_rank so processes print themselves in order
     fprintf(stderr, "world_rank=%2.d, appnum=%d, local_rank=%d\n", world_rank, appnum, c->local_rank);
 
     c->role = (appnum == 0 ? R_COUPLER : R_MODEL);
 
+    /*
+     * Each process shares the size of its group to the coupler.
+     */
     int *all_sizes;
     if(c->role == R_COUPLER){
         all_sizes = malloc(world_size * sizeof(*all_sizes));
     }
     MPI_Gather(&c->local_size, 1, MPI_INT, all_sizes, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    /*
-     * ==> all_sizes = [1 n1 n1 n1 ... n1 n2 n2 n2 ... n2 n3 n3 n3 ... n3]
-     *                    |- n1 entries-| |- n2 entries-| |- n3 entries-|
-     *                                    ^               ^
-     *                             index  i              i+n2
-     *                            memory  p              p+*p
-     */
 
     if(c->role == R_COUPLER){
         /*
@@ -59,7 +59,16 @@ MPI_Comm init_coupler(struct coupler *c, int nb_models)
         fprintf(stderr, "\033[1D]\n");
 
         /*
-         * Create array of model sizes.
+         * The coupler ends up with an array like this, and we want to use this
+         * to make the array [n1, n2, n3, ...].
+         * ==> all_sizes = [nc ... nc n1 n1 n1 ... n1 n2 n2 n2 ... n2 n3 n3 n3 ... n3 ...]
+         *                  ^         |--n1 entries-| |--n2 entries-| |--n3 entries-| ...
+         *                  |         ^               ^               ^
+         *       index:     0        0+nc             i              i+n2
+         *      memory:(all_sizes) (all_sizes+nc)     p              p+*p
+         * where
+         *  - nc is the number of coupler processes
+         *  - n1,n2... are the number of processes of each model
          */
         int model_sizes[nb_models];
         int coupler_size = c->local_size;
@@ -82,6 +91,11 @@ MPI_Comm init_coupler(struct coupler *c, int nb_models)
         fprintf(stderr, "\033[1D]\n");
     }
 
+    /*
+     * Create intercommunicators.  If I'm a model, I make one call to
+     * MPI_Intercomm_create and the coupler will make one call to
+     * per model
+     */
     if(c->role == R_MODEL){
         // appnum = 1,2,... (because 0 is coupler and every one after is a model)
         MPI_Intercomm_create(
@@ -94,14 +108,7 @@ MPI_Comm init_coupler(struct coupler *c, int nb_models)
         );
         c->model_no = appnum-1; // Make it start at 0 so it can be used as an index;
     } else if (c->role == R_COUPLER){
-        /* remote_leader_world_rank calculation uses the same idea as the loop
-         * computing the model sizes.  It is the index of the first entry of
-         * that model in all_sizes which is equal to the world rank of the root
-         * process of that model.
-         *
-         *      remote_leader_world_rank = coupler_size + sum(sizes of previous models)
-         */
-        int remote_leader_world_rank = all_sizes[0];
+        int remote_leader_world_rank = all_sizes[0]; // 
         for(int i = 0; i < nb_models; i++){
             fprintf(stderr, "Model %d's remote_leader_world_rank is %d\n", i, remote_leader_world_rank);
             MPI_Intercomm_create(

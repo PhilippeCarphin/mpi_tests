@@ -24,6 +24,10 @@ int main(int argc, char **argv)
 
     struct coupler c;
     init_coupler(&c, nb_models);
+    if(c.model_sizes[0] != 4){
+        fprintf(stderr, "First model should have exactly 4 processes.  This isn't a real coupler, it's just to test MPI_Scatterv and MPI_Gatherv\n");
+        MPI_Abort(MPI_COMM_WORLD, 88);
+    }
 
     struct tile tiles[4];
     int jpiglo;
